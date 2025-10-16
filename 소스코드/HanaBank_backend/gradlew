@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Simple gradlew script
+exec java -cp gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain "$@"

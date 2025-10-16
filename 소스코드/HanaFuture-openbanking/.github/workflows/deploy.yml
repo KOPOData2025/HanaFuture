@@ -1,0 +1,160 @@
+name: Deploy OpenBanking Backend to AWS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-openbanking-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: openbanking-backend
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "corretto"
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew clean build -x test
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Deploy to EC2
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+
+          ssh -i private_key.pem -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            "export MYSQL_DB_URL='${{ secrets.MYSQL_DB_URL }}' && \
+             export MYSQL_DB_USERNAME='${{ secrets.MYSQL_DB_USERNAME }}' && \
+             export MYSQL_DB_PASSWORD='${{ secrets.MYSQL_DB_PASSWORD }}' && \
+             export JWT_SECRET='${{ secrets.JWT_SECRET }}' && \
+             export HANABANK_API_URL='${{ secrets.HANABANK_API_URL }}' && \
+             export HANABANK_API_KEY='${{ secrets.HANABANK_API_KEY }}' && \
+             bash -s" << 'EOF'
+            echo " IAM 역할과 ECR Credential Helper 사용으로 자동 인증"
+            
+            docker stop openbanking-backend || true
+            docker rm -f openbanking-backend || true
+            
+            docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            
+            echo " 환경변수 확인:"
+            echo "MYSQL_DB_URL 길이: ${#MYSQL_DB_URL}"
+            echo "MYSQL_DB_USERNAME 길이: ${#MYSQL_DB_USERNAME}"
+            echo "MYSQL_DB_PASSWORD 길이: ${#MYSQL_DB_PASSWORD}"
+            echo "JWT_SECRET 길이: ${#JWT_SECRET}"
+            
+            echo " GitHub Secrets 상태 확인:"
+            echo "MYSQL_DB_URL 설정 여부: ${{ secrets.MYSQL_DB_URL != '' }}"
+            echo "MYSQL_DB_USERNAME 설정 여부: ${{ secrets.MYSQL_DB_USERNAME != '' }}"
+            echo "MYSQL_DB_PASSWORD 설정 여부: ${{ secrets.MYSQL_DB_PASSWORD != '' }}"
+            echo "JWT_SECRET 설정 여부: ${{ secrets.JWT_SECRET != '' }}"
+            
+            echo "GitHub Secrets 사용하여 환경변수 설정"
+
+            # 새 컨테이너 실행
+            docker run -d \
+              --name openbanking-backend \
+              -p 8081:8081 \
+              -e SPRING_PROFILES_ACTIVE=prod \
+              -e MYSQL_DB_URL="$MYSQL_DB_URL" \
+              -e MYSQL_DB_USERNAME="$MYSQL_DB_USERNAME" \
+              -e MYSQL_DB_PASSWORD="$MYSQL_DB_PASSWORD" \
+              -e JWT_SECRET="$JWT_SECRET" \
+              -e HANABANK_API_URL="$HANABANK_API_URL" \
+              -e HANABANK_API_KEY="$HANABANK_API_KEY" \
+              -e JAVA_TOOL_OPTIONS="-Dspring.profiles.active=prod" \
+              ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            
+            echo " 컨테이너 내부 환경변수 확인:"
+            docker exec openbanking-backend printenv | grep -E "(SPRING_PROFILES_ACTIVE|MYSQL_DB|JWT)" || echo "환경변수 확인 실패"
+            
+            echo "⏳ 애플리케이션 시작 대기 중..."
+            for i in {1..5}; do
+              if curl -f http://localhost:8081/actuator/health > /dev/null 2>&1; then
+                echo " Health Check 성공!"
+                break
+              fi
+              echo " Health Check 시도 $i/5 (15초 대기)..."
+              sleep 15
+            done
+            
+            if curl -f http://localhost:8081/actuator/health > /dev/null 2>&1; then
+              echo " 배포 성공 - 애플리케이션 정상 작동"
+            else
+              echo " Health Check 최종 실패 - 컨테이너 로그 확인"
+              docker logs openbanking-backend --tail 50
+              exit 1
+            fi
+
+            echo " OpenBanking Backend 배포 완료"
+          EOF
+
+          rm private_key.pem
+
+      - name: Deployment status
+        if: success()
+        run: |
+          echo " OpenBanking Backend 배포 성공!"
+          echo "Health Check: http://${{ secrets.EC2_HOST }}:8081/actuator/health"
+          echo "API Docs: http://${{ secrets.EC2_HOST }}:8081/swagger-ui.html"
+
+      - name: Notify deployment failure
+        if: failure()
+        run: |
+          echo " OpenBanking Backend 배포 실패"
+          echo "로그를 확인하여 문제를 해결해주세요."

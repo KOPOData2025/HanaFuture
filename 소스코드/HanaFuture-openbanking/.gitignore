@@ -1,0 +1,54 @@
+HELP.md
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Database ###
+Wallet_DinkDB/
+*.jks
+*.sso
+*.p12
+*.pem
+=======
+### Environment Variables ###
+.env
+.env.local
+.env.production
+.env.staging
+
+# ✅ 환경 별 설정파일 (로컬 설정은 git에 올릴 필요 없음)
+/src/main/resources/application-local.yml
+/Wallet_DinkDB
