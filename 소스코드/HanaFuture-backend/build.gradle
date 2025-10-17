@@ -1,0 +1,88 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.4.9'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.hanaTI'
+version = '0.0.1-SNAPSHOT'
+description = 'Demo project for Spring Boot'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+	
+	// JWT
+	implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3'
+	
+	// Password encoding
+	implementation 'org.springframework.security:spring-security-crypto'
+	
+	// Swagger/OpenAPI
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
+	
+	// WebClient for external API calls
+	implementation 'org.springframework.boot:spring-boot-starter-webflux'
+
+	// XML processing
+	implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.18.4'
+	
+	// CoolSMS for phone verification
+	implementation 'net.nurigo:sdk:4.3.0'
+	
+	compileOnly 'org.projectlombok:lombok'
+	
+	// Database Drivers
+	runtimeOnly 'com.mysql:mysql-connector-j' // MySQL
+	runtimeOnly 'com.oracle.database.jdbc:ojdbc11:23.3.0.23.09' // Oracle
+	
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.security:spring-security-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+tasks.named('bootRun') {
+	// 환경 변수에서 프로파일 가져오기 (기본값: local)
+	def activeProfile = System.getenv('SPRING_PROFILES_ACTIVE') ?: 'local'
+	
+	jvmArgs = [
+		'-Djava.net.preferIPv4Stack=true',
+		'-Djava.net.preferIPv4Addresses=true',
+		'-Dserver.address=127.0.0.1',
+		"-Dspring.profiles.active=${activeProfile}"
+	]
+	
+	// 시작 시 프로파일 정보 출력
+	doFirst {
+		println "=========================================="
+		println " HanaFuture Backend Starting..."
+		println " Active Profile: ${activeProfile}"
+		println "=========================================="
+	}
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}

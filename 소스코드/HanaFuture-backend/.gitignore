@@ -1,0 +1,92 @@
+HELP.md
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Windows/MinGW ###
+*.stackdump
+bash.exe.stackdump
+
+### Environment Files ###
+.env
+.env.local
+.env.production
+.env.development
+.env.test
+
+### Database ###
+*.db
+*.sqlite
+*.sqlite3
+
+### Security & Keys ###
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
+*.truststore
+secrets/
+keys/
+
+### Logs ###
+*.log
+logs/
+log/
+
+### Temporary Files ###
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+### OS Files ###
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+### Docker ###
+docker-compose.override.yml
+.dockerignore
+
+### JWT & API Keys ###
+jwt-secret.txt
+api-keys.txt
+

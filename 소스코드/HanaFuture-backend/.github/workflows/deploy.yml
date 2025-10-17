@@ -1,0 +1,146 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches:
+      - main # main 브랜치에 push될 때만 실행
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  S3_BUCKET: ${{ secrets.S3_BUCKET }}
+  CODEDEPLOY_APPLICATION: ${{ secrets.CODEDEPLOY_APPLICATION }}
+  CODEDEPLOY_DEPLOYMENT_GROUP: ${{ secrets.CODEDEPLOY_DEPLOYMENT_GROUP }}
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 코드 체크아웃
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Java 17 설정
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          # cache: gradle  # 캐시 일시적으로 비활성화 (application.yml 변경사항 반영 위해)
+
+      # 3. Gradle 실행 권한 부여
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      # 4. Gradle 캐시 삭제 (강제 재빌드)
+      - name: Clean Gradle cache
+        run: rm -rf ~/.gradle/caches/
+
+      # 5. Gradle 빌드 (테스트 제외)
+      - name: Build with Gradle
+        run: ./gradlew clean build -x test --no-build-cache
+
+      # 6. AWS 자격 증명 설정
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # 7. ECR 로그인
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 8. Docker 이미지 빌드 및 푸시
+      - name: Build and push Docker image
+        run: |
+          echo "Building Docker image..."
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:latest $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+          echo "Pushing Docker image to ECR..."
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+          echo "Docker image pushed successfully!"
+          echo "Image: $ECR_REGISTRY/$ECR_REPOSITORY:latest"
+          echo "Image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      # 9. 배포 파일 준비 (appspec.yml, scripts/)
+      - name: Prepare deployment package
+        run: |
+          echo "Creating deployment package..."
+          mkdir -p deploy
+          cp appspec.yml deploy/
+          cp -r scripts deploy/
+
+          echo "Deployment package created."
+          ls -la deploy/
+
+      # 10. 배포 패키지를 zip으로 압축
+      - name: Create deployment zip
+        run: |
+          cd deploy
+          zip -r ../deploy.zip .
+          cd ..
+          echo "Deployment zip created: $(ls -lh deploy.zip)"
+
+      # 11. S3에 배포 패키지 업로드
+      - name: Upload to S3
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          S3_KEY="deployments/hanafuture-backend-${TIMESTAMP}-${IMAGE_TAG:0:7}.zip"
+
+          echo "Uploading to S3: s3://$S3_BUCKET/$S3_KEY"
+          aws s3 cp deploy.zip s3://$S3_BUCKET/$S3_KEY
+
+          echo "S3_KEY=$S3_KEY" >> $GITHUB_ENV
+          echo "Uploaded successfully!"
+
+      # 12. CodeDeploy 배포 시작
+      - name: Deploy with CodeDeploy
+        run: |
+          echo "Starting CodeDeploy deployment..."
+
+          DEPLOYMENT_ID=$(aws deploy create-deployment \
+            --application-name $CODEDEPLOY_APPLICATION \
+            --deployment-group-name $CODEDEPLOY_DEPLOYMENT_GROUP \
+            --s3-location bucket=$S3_BUCKET,key=$S3_KEY,bundleType=zip \
+            --description "Deployment from GitHub Actions - Commit: ${IMAGE_TAG:0:7}" \
+            --query 'deploymentId' \
+            --output text)
+
+          echo "Deployment created: $DEPLOYMENT_ID"
+          echo "DEPLOYMENT_ID=$DEPLOYMENT_ID" >> $GITHUB_ENV
+
+          # CodeDeploy 콘솔 링크
+          echo "Monitor deployment at: https://console.aws.amazon.com/codesuite/codedeploy/deployments/$DEPLOYMENT_ID?region=$AWS_REGION"
+
+      # 13. CodeDeploy 배포 상태 확인
+      - name: Wait for deployment
+        run: |
+          echo "Waiting for deployment $DEPLOYMENT_ID to complete..."
+
+          aws deploy wait deployment-successful \
+            --deployment-id $DEPLOYMENT_ID \
+            --region $AWS_REGION
+
+          echo "✅ Deployment completed successfully!"
+
+      # 14. 배포 결과 요약
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "=== Deployment Summary ==="
+          echo "Application: $CODEDEPLOY_APPLICATION"
+          echo "Deployment Group: $CODEDEPLOY_DEPLOYMENT_GROUP"
+          echo "Deployment ID: $DEPLOYMENT_ID"
+          echo "Docker Image: $ECR_REGISTRY/$ECR_REPOSITORY:latest"
+          echo "Commit SHA: $IMAGE_TAG"
+          echo "=========================="
