@@ -50,7 +50,7 @@
 
 | 구분       | 내용                                                                                         | 비고                                                                                                      |
 | ---------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| 이름       | 이철우                                                                                       |  <img width="120" height="605" alt="image" src="https://github.com/user-attachments/assets/836285b7-1c8e-4846-9f2e-7fb54f09aa7a"/>           |
+| 이름       | 이철우                                                                                       |  <img width="150" alt="image" src="https://github.com/user-attachments/assets/836285b7-1c8e-4846-9f2e-7fb54f09aa7a"/>           |
 | 연락처     | 이메일                                                                                       | chulwoo25@naver.com                                                                                       |
 | 전공       | 홍익대학교 컴퓨터공학과                                                                       | 졸업(2025.02)                                                                                |
 | Skill set | Language                                                                                     | Java, Kotlin, Javascript, C++, C, Python   |
